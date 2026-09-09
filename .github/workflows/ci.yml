@@ -34,9 +34,7 @@ jobs:
         working-directory: ${{ matrix.service }}
 
       - name: Run tests (if present)
-        run: |
-          # provide CI flags if test runner supports them
-          npm run test --if-present -- --ci || true
+        run: npm run test --if-present -- --ci
         working-directory: ${{ matrix.service }}
 
       - name: Run npm audit (summary)
@@ -69,7 +67,7 @@ jobs:
         run: npm ci
         working-directory: frontend
 
-      - name: Lint frontend (if present)
+      - name: Run frontend lint (if present)
         run: npm run lint --if-present
         working-directory: frontend
 
