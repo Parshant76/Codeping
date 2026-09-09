@@ -1,0 +1,41 @@
+.contest-card h3 {
+  margin: 0.75rem 0;
+  line-height: 1.3;
+}
+
+.contest-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.platform-tag {
+  color: white;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+}
+
+.contest-meta {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.contest-meta p {
+  margin: 0.25rem 0;
+}
+
+.contest-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.contest-actions .btn {
+  flex: 1;
+  text-align: center;
+  text-decoration: none;
+}
