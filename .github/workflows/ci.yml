@@ -26,7 +26,12 @@ jobs:
           cache-dependency-path: ${{ matrix.service }}/package-lock.json
 
       - name: Install dependencies (service=${{ matrix.service }})
-        run: npm ci
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
         working-directory: ${{ matrix.service }}
 
       - name: Run lint (if present)
@@ -64,7 +69,12 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install frontend deps
-        run: npm ci
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
         working-directory: frontend
 
       - name: Run frontend lint (if present)
