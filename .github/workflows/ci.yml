@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          # scope cache to frontend package-lock if present
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Run frontend tests (if present)
+        run: npm run test --if-present
+        working-directory: frontend
+
+      - name: Build frontend
+        run: npm run build --if-present
+        working-directory: frontend
+
+  backend:
+    name: Backend install & checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          # scope cache to backend package-lock if present
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci
+        working-directory: backend
+
+      - name: Run backend tests (if present)
+        run: npm run test --if-present
+        working-directory: backend
+
+      - name: Run optional backend build/checks (if present)
+        run: |
+          npm run build --if-present
+          npm run lint --if-present
+        working-directory: backend
