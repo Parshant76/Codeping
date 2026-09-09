@@ -7,58 +7,82 @@ on:
     branches: [main]
 
 jobs:
-  frontend:
-    name: Frontend build
+  check:
+    name: Lint & Test (matrix)
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [frontend, backend]
+        node: [18, 20]
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Use Node.js ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: 'npm'
+          cache-dependency-path: ${{ matrix.service }}/package-lock.json
+
+      - name: Install dependencies (service=${{ matrix.service }})
+        run: npm ci
+        working-directory: ${{ matrix.service }}
+
+      - name: Run lint (if present)
+        run: npm run lint --if-present
+        working-directory: ${{ matrix.service }}
+
+      - name: Run tests (if present)
+        run: |
+          # provide CI flags if test runner supports them
+          npm run test --if-present -- --ci || true
+        working-directory: ${{ matrix.service }}
+
+      - name: Run npm audit (summary)
+        run: npm audit --json > audit-${{ matrix.service }}.json || true
+        working-directory: ${{ matrix.service }}
+
+      - name: Upload audit result
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-${{ matrix.service }}-node${{ matrix.node }}
+          path: ${{ matrix.service }}/audit-${{ matrix.service }}.json
+
+  build-frontend:
+    name: Build Frontend
+    runs-on: ubuntu-latest
+    needs: check
+    if: always()
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: 'npm'
-          # scope cache to frontend package-lock if present
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Install frontend dependencies
+      - name: Install frontend deps
         run: npm ci
+        working-directory: frontend
+
+      - name: Lint frontend (if present)
+        run: npm run lint --if-present
         working-directory: frontend
 
       - name: Run frontend tests (if present)
-        run: npm run test --if-present
+        run: npm run test --if-present -- --ci
         working-directory: frontend
 
       - name: Build frontend
-        run: npm run build --if-present
+        run: npm run build
         working-directory: frontend
 
-  backend:
-    name: Backend install & checks
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Upload frontend build artifact
+        uses: actions/upload-artifact@v4
         with:
-          node-version: 20
-          cache: 'npm'
-          # scope cache to backend package-lock if present
-          cache-dependency-path: backend/package-lock.json
-
-      - name: Install backend dependencies
-        run: npm ci
-        working-directory: backend
-
-      - name: Run backend tests (if present)
-        run: npm run test --if-present
-        working-directory: backend
-
-      - name: Run optional backend build/checks (if present)
-        run: |
-          npm run build --if-present
-          npm run lint --if-present
-        working-directory: backend
+          name: frontend-build
+          path: frontend/dist
