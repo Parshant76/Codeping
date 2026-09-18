@@ -1,5 +1,6 @@
 const express = require('express');
 const { syncAllContests, getContests } = require('../services/contestAggregator');
+const { syncLimiter } = require('../middleware/rateLimiter');
 
 const router = express.Router();
 
@@ -24,7 +25,7 @@ router.get('/platforms', (_req, res) => {
   });
 });
 
-router.post('/sync', async (_req, res) => {
+router.post('/sync', syncLimiter, async (_req, res) => {
   try {
     const summary = await syncAllContests();
     return res.json({ message: 'Contest sync completed', summary });
