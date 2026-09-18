@@ -2,6 +2,12 @@ require('dotenv').config();
 const connectDB = require('../config/db');
 const User = require('../models/User');
 
+// Prevent accidental seeding on production instances unless explicitly allowed.
+if (process.env.NODE_ENV === 'production' && process.env.SEED_ALLOW_PRODUCTION !== 'true') {
+  console.log('Refusing to seed demo user in production');
+  process.exit(1);
+}
+
 async function seedDemoUser() {
   await connectDB();
 
