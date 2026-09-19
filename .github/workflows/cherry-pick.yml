@@ -1,0 +1,78 @@
+name: Cherry-pick merged PR
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  cherry_pick:
+    name: Create cherry-pick PR after merge
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Configure git user
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Create branch and cherry-pick merged commit
+        id: cherry
+        env:
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          branch="cherry-pick/pr-${{ github.event.pull_request.number }}-to-main"
+          git checkout -B "$branch"
+          git cherry-pick "$MERGE_SHA"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+      - name: Push cherry-pick branch
+        run: |
+          git push origin HEAD:${{ steps.cherry.outputs.branch }}
+
+      - name: Create PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const branch = '${{ steps.cherry.outputs.branch }}';
+            const prNumber = '${{ github.event.pull_request.number }}';
+            const sourceBranch = '${{ github.event.pull_request.head.ref }}';
+
+            const { data: existing } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              head: `${context.repo.owner}:${branch}`,
+              state: 'open',
+            });
+
+            if (existing.length > 0) {
+              core.info(`Cherry-pick PR already exists for ${branch}.`);
+              return;
+            }
+
+            await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Cherry-pick: ${sourceBranch} -> main`,
+              head: branch,
+              base: 'main',
+              body: [
+                'This PR was auto-created after the original PR was merged.',
+                '',
+                `- Original PR: #${prNumber}`,
+                `- Source branch: ${sourceBranch}`,
+                `- Target branch: main`,
+                '',
+                'This cherry-pick only runs when the original PR is merged.'
+              ].join('\n'),
+            });
