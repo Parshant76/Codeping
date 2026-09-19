@@ -1,0 +1,124 @@
+name: Cherry-pick merged PR
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  cherry_pick:
+    name: Create a cherry-pick PR
+    if: |
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '/cherry-pick') &&
+      !github.event.comment.user.type == 'Bot'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Parse cherry-pick command
+        id: parse
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.comment.body || '';
+            const match = body.match(/\/cherry-pick(?:\s+([A-Za-z0-9._/-]+))?\s*->\s*([A-Za-z0-9._/-]+)/i);
+
+            if (!match) {
+              core.setFailed('Invalid command format. Use: /cherry-pick [source-branch] -> [target-branch]');
+              return;
+            }
+
+            const sourceBranch = (match[1] || '').trim() || context.payload.issue.pull_request?.head?.ref || '';
+            const targetBranch = (match[2] || '').trim();
+            const prNumber = context.payload.issue.number;
+
+            if (!sourceBranch || !targetBranch) {
+              core.setFailed('Both source and target branches are required. Example: /cherry-pick -> main');
+              return;
+            }
+
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+            });
+
+            if (!pr.merged_at) {
+              core.setFailed('This PR must be merged before a cherry-pick PR can be created.');
+              return;
+            }
+
+            core.setOutput('source_branch', sourceBranch);
+            core.setOutput('target_branch', targetBranch);
+            core.setOutput('pr_number', String(prNumber));
+            core.setOutput('sha', pr.merge_commit_sha || pr.head.sha);
+
+      - name: Checkout target branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ steps.parse.outputs.target_branch }}
+
+      - name: Configure git user
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Create cherry-pick branch
+        id: cherry
+        run: |
+          source="${{ steps.parse.outputs.source_branch }}"
+          target="${{ steps.parse.outputs.target_branch }}"
+          branch="cherry-pick/${source}-to-${target}"
+          branch="${branch//\//-}"
+          git checkout -B "$branch"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+      - name: Cherry-pick commit
+        run: |
+          git cherry-pick ${{ steps.parse.outputs.sha }}
+
+      - name: Push cherry-pick branch
+        run: |
+          git push origin HEAD:${{ steps.cherry.outputs.branch }}
+
+      - name: Create pull request
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const sourceBranch = '${{ steps.parse.outputs.source_branch }}';
+            const targetBranch = '${{ steps.parse.outputs.target_branch }}';
+            const prNumber = '${{ steps.parse.outputs.pr_number }}';
+            const branch = '${{ steps.cherry.outputs.branch }}';
+
+            const { data: existing } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              head: `${context.repo.owner}:${branch}`,
+              state: 'open',
+            });
+
+            if (existing.length > 0) {
+              core.info(`Cherry-pick PR already exists for ${branch}.`);
+              return;
+            }
+
+            await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Cherry-pick: ${sourceBranch} -> ${targetBranch}`,
+              head: branch,
+              base: targetBranch,
+              body: [
+                'This PR was created from a merged PR.',
+                '',
+                `- Original PR: #${prNumber}`,
+                `- Source branch: ${sourceBranch}`,
+                `- Target branch: ${targetBranch}`,
+                '',
+                'The cherry-pick is created only after the original PR is merged.'
+              ].join('\n'),
+            });
