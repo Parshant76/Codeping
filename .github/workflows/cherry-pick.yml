@@ -11,39 +11,34 @@ permissions:
 jobs:
   cherry_pick:
     name: Create a cherry-pick PR
-    if: |
+    if: >
       github.event.issue.pull_request &&
       contains(github.event.comment.body, '/cherry-pick') &&
-      !github.event.comment.user.type == 'Bot'
+      github.event.comment.user.type != 'Bot'
     runs-on: ubuntu-latest
 
     steps:
-      - name: Parse cherry-pick command
-        id: parse
+      - name: Validate comment and merged PR
+        id: pr
         uses: actions/github-script@v7
         with:
           script: |
-            const body = context.payload.comment.body || '';
-            const match = body.match(/\/cherry-pick(?:\s+([A-Za-z0-9._/-]+))?\s*->\s*([A-Za-z0-9._/-]+)/i);
+            const body = (context.payload.comment.body || '').trim();
+            const match = body.match(/^\/cherry-pick(?:\s+([A-Za-z0-9._/-]+))?\s*->\s*([A-Za-z0-9._/-]+)\s*$/i);
 
             if (!match) {
-              core.setFailed('Invalid command format. Use: /cherry-pick [source-branch] -> [target-branch]');
+              core.setFailed('Use: /cherry-pick [source-branch] -> [target-branch]');
               return;
             }
 
-            const sourceBranch = (match[1] || '').trim() || context.payload.issue.pull_request?.head?.ref || '';
+            const sourceBranch = (match[1] || '').trim();
             const targetBranch = (match[2] || '').trim();
-            const prNumber = context.payload.issue.number;
-
-            if (!sourceBranch || !targetBranch) {
-              core.setFailed('Both source and target branches are required. Example: /cherry-pick -> main');
-              return;
-            }
+            const issueNumber = context.payload.issue.number;
 
             const { data: pr } = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              pull_number: prNumber,
+              pull_number: issueNumber,
             });
 
             if (!pr.merged_at) {
@@ -51,35 +46,32 @@ jobs:
               return;
             }
 
-            core.setOutput('source_branch', sourceBranch);
+            core.setOutput('source_branch', sourceBranch || pr.head.ref);
             core.setOutput('target_branch', targetBranch);
-            core.setOutput('pr_number', String(prNumber));
-            core.setOutput('sha', pr.merge_commit_sha || pr.head.sha);
+            core.setOutput('pr_number', String(issueNumber));
+            core.setOutput('source_sha', pr.head.sha);
 
       - name: Checkout target branch
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ steps.parse.outputs.target_branch }}
+          ref: ${{ steps.pr.outputs.target_branch }}
 
       - name: Configure git user
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Create cherry-pick branch
+      - name: Create cherry-pick branch and cherry-pick commit
         id: cherry
         run: |
-          source="${{ steps.parse.outputs.source_branch }}"
-          target="${{ steps.parse.outputs.target_branch }}"
+          source="${{ steps.pr.outputs.source_branch }}"
+          target="${{ steps.pr.outputs.target_branch }}"
           branch="cherry-pick/${source}-to-${target}"
           branch="${branch//\//-}"
           git checkout -B "$branch"
+          git cherry-pick "${{ steps.pr.outputs.source_sha }}"
           echo "branch=$branch" >> "$GITHUB_OUTPUT"
-
-      - name: Cherry-pick commit
-        run: |
-          git cherry-pick ${{ steps.parse.outputs.sha }}
 
       - name: Push cherry-pick branch
         run: |
@@ -89,9 +81,9 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const sourceBranch = '${{ steps.parse.outputs.source_branch }}';
-            const targetBranch = '${{ steps.parse.outputs.target_branch }}';
-            const prNumber = '${{ steps.parse.outputs.pr_number }}';
+            const sourceBranch = '${{ steps.pr.outputs.source_branch }}';
+            const targetBranch = '${{ steps.pr.outputs.target_branch }}';
+            const prNumber = '${{ steps.pr.outputs.pr_number }}';
             const branch = '${{ steps.cherry.outputs.branch }}';
 
             const { data: existing } = await github.rest.pulls.list({
