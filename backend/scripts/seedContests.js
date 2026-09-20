@@ -1,7 +1,6 @@
 require('dotenv').config();
 const connectDB = require('./config/db');
 const { syncAllContests } = require('./services/contestAggregator');
-const { startCronJobs } = require('./jobs/cronJobs');
 
 async function seed() {
   await connectDB();
